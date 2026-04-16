@@ -69,7 +69,7 @@ If you use this codebase in your research, please cite the framework using the f
 
 ```bibtex
 @misc{VQEC2026,
-  author = {Variational QEC Team},
+  author = {Kaivalya Sinhg},
   title = {Adaptive Noise-Aware Variational Decoding for Quantum Error Correction},
   year = {2026},
   publisher = {GitHub},
