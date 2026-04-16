@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+- family-names: "Singh"
+  given-names: "Kaivalya"
+title: "Variational QEC Decoder: Adaptive Noise-Aware Quantum Error Correction"
+version: 0.1.0
+date-released: 2026-04-15
+url: "https://github.com/kaivalya-cyber/variational-qec-decoder"
+repository-code: "https://github.com/kaivalya-cyber/variational-qec-decoder"
+license: MIT
+keywords:
+  - quantum error correction
+  - variational quantum circuits
+  - machine learning
+  - pennylane
+  - surface code
