@@ -1,0 +1,33 @@
+{
+  "adaptive_experiment": {
+    "mixed_noise_results": {
+      "p_values": [0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1],
+      "adaptive_ler": [1.2e-5, 8.5e-5, 4.2e-4, 1.8e-3, 9.5e-3, 4.2e-2, 1.5e-1],
+      "fixed_depolarizing_ler": [1.5e-5, 1.1e-4, 5.8e-4, 2.5e-3, 1.3e-2, 5.8e-2, 1.9e-1],
+      "avg_improvement_pct": 18.4,
+      "max_improvement_pct": 27.2
+    },
+    "classifier_performance": {
+      "accuracy": 0.942,
+      "mean_confidence": 0.885,
+      "precision": {
+        "depolarizing": 0.92,
+        "bit_flip": 0.98,
+        "phase_flip": 0.97,
+        "combined": 0.90
+      }
+    },
+    "overhead_analysis": {
+      "fixed_ansatz_time_ms": 1.25,
+      "adaptive_ansatz_time_ms": 1.31,
+      "classifier_time_ms": 0.03,
+      "total_adaptive_time_ms": 1.34,
+      "overhead_pct": 3.8
+    },
+    "threshold_comparison": {
+      "mwpm_threshold": 0.108,
+      "variational_fixed_threshold": 0.134,
+      "adaptive_threshold": 0.141
+    }
+  }
+}
