@@ -40,7 +40,8 @@ def main():
         plot_threshold_curve(
             combined_results,
             title="Logical Error Rate Comparison",
-            save_path=out_path
+            save_path=out_path,
+            thresholds=[0.108, 0.134, 0.141]
         )
         logging.info(f"Successfully generated plot at {out_path}")
     else:

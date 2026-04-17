@@ -15,6 +15,8 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
+import pennylane as qml
+from pennylane import numpy as pnp
 import torch
 
 from .decoder import VariationalDecoder
@@ -27,10 +29,10 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 RESULTS_DIR: str = "results/checkpoints"
-DEFAULT_PATIENCE: int = 20
+DEFAULT_PATIENCE: int = 50
 DEFAULT_LR: float = 0.01
 DEFAULT_BATCH_SIZE: int = 32
-DEFAULT_N_EPOCHS: int = 100
+DEFAULT_N_EPOCHS: int = 500
 
 
 # ---------------------------------------------------------------------------
@@ -96,6 +98,7 @@ class Trainer:
     lr: float = DEFAULT_LR
     patience: int = DEFAULT_PATIENCE
     checkpoint_dir: str = RESULTS_DIR
+    batch_size: int = DEFAULT_BATCH_SIZE
 
     def __post_init__(self) -> None:
         # PyTorch-based Adam optimiser acting on numpy params
@@ -106,7 +109,7 @@ class Trainer:
             [self._params_tensor], lr=self.lr
         )
         self._scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            self._optimizer, mode="min", factor=0.5, patience=10, verbose=False
+            self._optimizer, mode="min", factor=0.5, patience=10
         )
         self.history = TrainingHistory()
 
@@ -122,7 +125,7 @@ class Trainer:
     def train(
         self,
         n_epochs: int = DEFAULT_N_EPOCHS,
-        batch_size: int = DEFAULT_BATCH_SIZE,
+        batch_size: Optional[int] = None,
         p_range: Tuple[float, float] = (0.01, 0.1),
         eval_shots: int = 500,
         seed: int = 42,
@@ -147,6 +150,7 @@ class Trainer:
         TrainingHistory
             Training metrics.
         """
+        batch_size = batch_size if batch_size is not None else self.batch_size
         np.random.seed(seed)
         torch.manual_seed(seed)
 
@@ -164,7 +168,7 @@ class Trainer:
         for epoch in range(n_epochs):
             t0 = time.time()
 
-            # Sample noise level uniformly from p_range
+            # Sample noise level
             p = np.random.uniform(p_range[0], p_range[1])
 
             # Generate training data
@@ -175,43 +179,47 @@ class Trainer:
                 [self.decoder.code.extract_syndrome(e) for e in errors]
             )
 
-            # Compute gradients via parameter shift rule
-            gradients = self.decoder.parameter_shift_gradient(syndromes, errors)
-            grad_norm = float(np.linalg.norm(gradients))
-
-            # Compute loss
-            loss = self.decoder.compute_loss(syndromes, errors)
-
-            # Adam update via PyTorch
+            # PennyLane autograd for gradients
+            def cost_fn(params):
+                return self.decoder.compute_loss(syndromes, errors, params=params)
+            
+            # Use pennylane.grad to compute gradients
+            # Ensure decoder params have requires_grad=True
+            params_pnp = pnp.array(self.decoder.params, requires_grad=True)
+            
+            grad_fn = qml.grad(cost_fn)
+            gradients = grad_fn(params_pnp)
+            
+            # The PennyLane grad returns a tuple if params is complex or multiple args,
+            # but here self.decoder.params is a single numpy array.
+            
+            # Update via Optimizer
             self._params_tensor.data = torch.tensor(
                 self.decoder.params, dtype=torch.float64
             )
-            self._params_tensor.grad = torch.tensor(gradients, dtype=torch.float64)
+            # gradients might be a numpy-wrapped array, convert to standard numpy then torch
+            self._params_tensor.grad = torch.tensor(np.array(gradients), dtype=torch.float64)
             self._optimizer.step()
             self._optimizer.zero_grad()
 
-            # Sync back to decoder
+            # Sync back
             self.decoder.params = self._params_tensor.data.numpy().copy()
+            loss = float(cost_fn(self.decoder.params))
+            grad_norm = float(np.linalg.norm(np.array(gradients)))
 
-            # Learning rate schedule
+            # Schedule
             self._scheduler.step(loss)
             current_lr = self._optimizer.param_groups[0]["lr"]
 
-            # Evaluate logical error rate periodically
+            # Evaluate LER
             if epoch % 5 == 0 or epoch == n_epochs - 1:
                 ler = self.decoder.compute_logical_error_rate(
                     eval_shots, seed=seed + epoch + 10000
                 )
             else:
-                ler = (
-                    self.history.logical_error_rates[-1]
-                    if self.history.logical_error_rates
-                    else float("nan")
-                )
+                ler = self.history.logical_error_rates[-1] if self.history.logical_error_rates else float("nan")
 
             elapsed = time.time() - t0
-
-            # Record history
             self.history.losses.append(loss)
             self.history.logical_error_rates.append(ler)
             self.history.gradient_norms.append(grad_norm)
@@ -220,13 +228,7 @@ class Trainer:
 
             logger.info(
                 "Epoch %3d/%d | loss=%.6f | LER=%.6f | |∇|=%.4f | lr=%.6f | %.2fs",
-                epoch + 1,
-                n_epochs,
-                loss,
-                ler,
-                grad_norm,
-                current_lr,
-                elapsed,
+                epoch + 1, n_epochs, float(loss), ler, grad_norm, current_lr, elapsed
             )
 
             # Early stopping check

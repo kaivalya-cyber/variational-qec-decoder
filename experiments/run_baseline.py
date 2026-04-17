@@ -19,7 +19,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 def main():
     parser = argparse.ArgumentParser(description="Run classical baseline decoders.")
     parser.add_argument("--d", type=int, default=3, help="Surface code distance")
-    parser.add_argument("--shots", type=int, default=1000, help="Number of Monte Carlo shots")
+    parser.add_argument("--shots", type=int, default=5000, help="Number of Monte Carlo shots")
     parser.add_argument("--noise", type=str, default="depolarizing", help="Noise model type")
     args = parser.parse_args()
 
@@ -57,7 +57,7 @@ def main():
     # Convert results to serializable format
     serializable_results = {}
     for name, data in results.items():
-        serializable_results[name] = {
+        serializable_results[f"{name}_d{args.d}"] = {
             "p_values": data["p_values"].tolist(),
             "logical_error_rates": data["logical_error_rates"].tolist()
         }

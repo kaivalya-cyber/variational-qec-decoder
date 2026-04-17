@@ -126,10 +126,10 @@ class HardwareEfficientAnsatz(Ansatz):
         syndrome_input : np.ndarray
             Binary syndrome; used for input encoding via RX rotations.
         """
-        # Encode syndrome into the circuit
-        for i, s in enumerate(syndrome_input):
-            if i < self.n_qubits:
-                qml.RX(float(s) * np.pi, wires=i)
+        # Vectorized syndrome encoding
+        for i in range(min(self.n_qubits, len(syndrome_input.T) if len(syndrome_input.shape) > 1 else len(syndrome_input))):
+            s = syndrome_input[..., i]
+            qml.RX(qml.math.cast(s, "float64") * np.pi, wires=i)
 
         # Variational layers
         idx = 0
@@ -327,10 +327,10 @@ class AdaptiveAnsatz(Ansatz):
         syndrome_input : np.ndarray
             Binary syndrome for input encoding.
         """
-        # Syndrome encoding
-        for i, s in enumerate(syndrome_input):
-            if i < self.n_qubits:
-                qml.RX(float(s) * np.pi, wires=i)
+        # Vectorized syndrome encoding
+        for i in range(min(self.n_qubits, len(syndrome_input.T) if len(syndrome_input.shape) > 1 else len(syndrome_input))):
+            s = syndrome_input[..., i]
+            qml.RX(qml.math.cast(s, "float64") * np.pi, wires=i)
 
         idx = 0
         for _layer in range(self._effective_layers):

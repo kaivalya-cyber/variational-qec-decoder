@@ -60,10 +60,10 @@ class MWPMDecoder:
 
         if isinstance(self.code, SurfaceCode):
             # Build separate X and Z matching graphs
-            # X stabilisers -> detect Z errors -> correct Z
-            h_x = h[: self.code.n_x_stabilizers, n:]  # Z part
-            # Z stabilisers -> detect X errors -> correct X
-            h_z = h[self.code.n_x_stabilizers :, :n]  # X part
+            # X stabilisers -> detect Z errors
+            h_x = h[: self.code.n_x_stabilizers, :n]  # X part
+            # Z stabilisers -> detect X errors
+            h_z = h[self.code.n_x_stabilizers :, n:]  # Z part
 
             self._matching_x = pymatching.Matching(h_x)
             self._matching_z = pymatching.Matching(h_z)
@@ -117,31 +117,17 @@ class MWPMDecoder:
         n_shots: int,
         seed: Optional[int] = None,
     ) -> float:
-        """Estimate the logical error rate.
-
-        Parameters
-        ----------
-        noise_model : NoiseModel
-            Noise model for sampling errors.
-        n_shots : int
-            Number of Monte Carlo shots.
-        seed : int, optional
-            Random seed.
-
-        Returns
-        -------
-        float
-        """
+        """Estimate the logical error rate."""
         errors = noise_model.sample_errors(self.code.n_qubits, n_shots, seed=seed)
         logical_ops = self.code.get_logical_ops()
-        logical_x = logical_ops["X"]
+        lx, lz = logical_ops["X"], logical_ops["Z"]
 
         n_errors = 0
         for i in range(n_shots):
             syndrome = self.code.extract_syndrome(errors[i])
             correction = self.decode(syndrome)
             residual = _compose_paulis(errors[i], correction)
-            if _is_logical_error(residual, logical_x):
+            if _is_logical_error(residual, lx, lz):
                 n_errors += 1
 
         return n_errors / n_shots
@@ -255,31 +241,17 @@ class LookupTableDecoder:
         n_shots: int,
         seed: Optional[int] = None,
     ) -> float:
-        """Estimate the logical error rate.
-
-        Parameters
-        ----------
-        noise_model : NoiseModel
-            Noise model.
-        n_shots : int
-            Number of shots.
-        seed : int, optional
-            Random seed.
-
-        Returns
-        -------
-        float
-        """
+        """Estimate the logical error rate."""
         errors = noise_model.sample_errors(self.code.n_qubits, n_shots, seed=seed)
         logical_ops = self.code.get_logical_ops()
-        logical_x = logical_ops["X"]
+        lx, lz = logical_ops["X"], logical_ops["Z"]
 
         n_errors = 0
         for i in range(n_shots):
             syndrome = self.code.extract_syndrome(errors[i])
             correction = self.decode(syndrome)
             residual = _compose_paulis(errors[i], correction)
-            if _is_logical_error(residual, logical_x):
+            if _is_logical_error(residual, lx, lz):
                 n_errors += 1
 
         return n_errors / n_shots

@@ -59,7 +59,7 @@ class VariationalDecoder:
         if self.n_qubits is None:
             self.n_qubits = self.code.n_qubits
         self.params: np.ndarray = self.ansatz.init_params(seed=42)
-        self._device = qml.device("default.qubit", wires=self.n_qubits)
+        self._device = qml.device("lightning.qubit", wires=self.n_qubits)
         self._build_circuit()
         logger.info(
             "VariationalDecoder initialised: %d qubits, %d params",
@@ -69,26 +69,14 @@ class VariationalDecoder:
 
     def _build_circuit(self) -> None:
         """Build the PennyLane QNode for the decoding circuit."""
-
         ansatz = self.ansatz
         n_qubits = self.n_qubits
 
-        @qml.qnode(self._device, interface="autograd")
+        # Use adjoint method for fast gradients with lightning.qubit
+        diff_method = "adjoint"
+
+        @qml.qnode(self._device, interface="autograd", diff_method=diff_method)
         def circuit(params: np.ndarray, syndrome: np.ndarray) -> np.ndarray:
-            """Execute the variational decode circuit.
-
-            Parameters
-            ----------
-            params : np.ndarray
-                Variational parameters.
-            syndrome : np.ndarray
-                Syndrome input.
-
-            Returns
-            -------
-            np.ndarray
-                Expectation values of PauliZ on each qubit.
-            """
             ansatz.forward(params, syndrome)
             return [qml.expval(qml.PauliZ(q)) for q in range(n_qubits)]
 
@@ -119,106 +107,42 @@ class VariationalDecoder:
                 correction[q] = 1  # X correction
         return correction
 
-    def decode_probabilities(self, syndrome: np.ndarray) -> np.ndarray:
-        """Return the raw flip probabilities for each qubit.
-
-        Parameters
-        ----------
-        syndrome : np.ndarray
-            Binary syndrome vector.
-
-        Returns
-        -------
-        np.ndarray
-            Float array of shape ``(n_qubits,)`` with values in [0, 1].
-        """
-        expectations = np.array(self._circuit(self.params, syndrome))
+    def decode_probabilities(
+        self, syndrome: np.ndarray, params: Optional[np.ndarray] = None
+    ) -> np.ndarray:
+        """Return the raw flip probabilities for each qubit."""
+        if params is None:
+            params = self.params
+        expectations = qml.math.stack(self._circuit(params, syndrome))
+        if len(qml.math.shape(expectations)) > 1:
+            expectations = qml.math.T(expectations)
         # Map [-1, 1] to [1, 0] (flip prob)
         return (1.0 - expectations) / 2.0
 
     def compute_loss(
-        self,
-        syndromes: np.ndarray,
-        errors: np.ndarray,
+        self, 
+        syndromes: np.ndarray, 
+        errors: np.ndarray, 
+        params: Optional[np.ndarray] = None
     ) -> float:
-        """Compute the cross-entropy loss over a batch.
+        """Compute the average binary cross-entropy loss using vectorized execution."""
+        if params is None:
+            params = self.params
+            
+        # Vectorized probabilities: returns (batch_size, n_qubits)
+        probs = self.decode_probabilities(syndromes, params=params)
+        
+        # target_x: 1 if error is X or Y, 0 if I or Z
+        targets = qml.math.cast(np.isin(errors, [1, 2]), "float64")
 
-        Parameters
-        ----------
-        syndromes : np.ndarray
-            Shape ``(batch_size, n_stabilizers)`` binary syndromes.
-        errors : np.ndarray
-            Shape ``(batch_size, n_qubits)`` integer error labels.
+        # Vectorized Binary Cross Entropy
+        eps = 1e-8
+        loss = -qml.math.sum(
+            targets * qml.math.log(probs + eps) + 
+            (1.0 - targets) * qml.math.log(1.0 - probs + eps)
+        )
 
-        Returns
-        -------
-        float
-            Mean cross-entropy loss.
-        """
-        batch_size = syndromes.shape[0]
-        total_loss = 0.0
-
-        for i in range(batch_size):
-            probs = self.decode_probabilities(syndromes[i])
-            # Binary target: 1 if error is X or Y (has X component)
-            targets = np.isin(errors[i], [1, 2]).astype(float)
-
-            # Cross entropy: -[t*log(p) + (1-t)*log(1-p)]
-            eps = 1e-8
-            probs_clipped = np.clip(probs, eps, 1.0 - eps)
-            loss = -(
-                targets * np.log(probs_clipped)
-                + (1 - targets) * np.log(1 - probs_clipped)
-            )
-            total_loss += np.mean(loss)
-
-        return total_loss / batch_size
-
-    def parameter_shift_gradient(
-        self,
-        syndromes: np.ndarray,
-        errors: np.ndarray,
-    ) -> np.ndarray:
-        """Compute gradients using the parameter shift rule.
-
-        For each parameter θ_k, the gradient is computed as:
-            ∂L/∂θ_k = [L(θ_k + π/2) - L(θ_k - π/2)] / 2
-
-        Parameters
-        ----------
-        syndromes : np.ndarray
-            Shape ``(batch_size, n_stabilizers)``.
-        errors : np.ndarray
-            Shape ``(batch_size, n_qubits)``.
-
-        Returns
-        -------
-        np.ndarray
-            Gradient vector of shape ``(n_params,)``.
-        """
-        gradients = np.zeros(self.ansatz.n_params)
-        original_params = self.params.copy()
-
-        for k in range(self.ansatz.n_params):
-            # Forward shift
-            shifted_plus = original_params.copy()
-            shifted_plus[k] += PARAMETER_SHIFT_DELTA
-            self.params = shifted_plus
-            loss_plus = self.compute_loss(syndromes, errors)
-
-            # Backward shift
-            shifted_minus = original_params.copy()
-            shifted_minus[k] -= PARAMETER_SHIFT_DELTA
-            self.params = shifted_minus
-            loss_minus = self.compute_loss(syndromes, errors)
-
-            gradients[k] = (loss_plus - loss_minus) / (
-                2.0 * np.sin(PARAMETER_SHIFT_DELTA)
-            )
-
-        # Restore original parameters
-        self.params = original_params
-        return gradients
+        return loss / len(syndromes)
 
     def compute_logical_error_rate(
         self,
@@ -246,26 +170,19 @@ class VariationalDecoder:
             self.code.n_qubits, n_shots, seed=seed
         )
         logical_ops = self.code.get_logical_ops()
-        logical_x = logical_ops["X"]
+        lx, lz = logical_ops["X"], logical_ops["Z"]
 
         n_logical_errors = 0
         for i in range(n_shots):
             error = errors[i]
             syndrome = self.code.extract_syndrome(error)
             correction = self.decode(syndrome)
-
-            # Combined error after correction
             residual = self._compose_paulis(error, correction)
 
-            # Check if residual is a non-trivial logical operator
-            if self._is_logical_error(residual, logical_x):
+            if self._is_logical_error(residual, lx, lz):
                 n_logical_errors += 1
 
-        rate = n_logical_errors / n_shots
-        logger.debug(
-            "Logical error rate: %d / %d = %.6f", n_logical_errors, n_shots, rate
-        )
-        return rate
+        return n_logical_errors / n_shots
 
     @staticmethod
     def _compose_paulis(a: np.ndarray, b: np.ndarray) -> np.ndarray:
@@ -296,22 +213,15 @@ class VariationalDecoder:
 
     @staticmethod
     def _is_logical_error(
-        residual: np.ndarray, logical_x: np.ndarray
+        residual: np.ndarray, lx: np.ndarray, lz: np.ndarray
     ) -> bool:
-        """Check if the residual error is equivalent to a logical X.
-
-        Parameters
-        ----------
-        residual : np.ndarray
-            Residual Pauli after correction.
-        logical_x : np.ndarray
-            Logical X operator.
-
-        Returns
-        -------
-        bool
-        """
-        # Check if X component of residual matches logical X
+        """Check if residual corresponds to a non-trivial logical error."""
         res_x = np.isin(residual, [1, 2]).astype(int)
-        log_x = np.isin(logical_x, [1, 2]).astype(int)
-        return bool(np.array_equal(res_x, log_x))
+        res_z = np.isin(residual, [2, 3]).astype(int)
+        log_x = np.isin(lx, [1, 2]).astype(int)
+        log_z = np.isin(lz, [2, 3]).astype(int)
+
+        comm_z = np.sum(res_x * log_z + res_z * np.isin(lz, [1, 2]).astype(int)) % 2
+        comm_x = np.sum(res_x * np.isin(lx, [2, 3]).astype(int) + res_z * log_x) % 2
+        
+        return bool(comm_x or comm_z)

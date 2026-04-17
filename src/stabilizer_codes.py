@@ -384,22 +384,20 @@ class SurfaceCode(StabilizerCode):
 
     def get_logical_ops(self) -> Dict[str, np.ndarray]:
         """Return representative logical X and Z operators.
-
-        Returns
-        -------
-        dict
-            ``{'X': array, 'Z': array}`` of length ``d*d``.
+        
+        For a rotated surface code, logical X connects Top and Bottom borders.
+        Logical Z connects Left and Right borders.
         """
         logical_x = np.zeros(self.n_qubits, dtype=int)
         logical_z = np.zeros(self.n_qubits, dtype=int)
 
-        # Logical X: X on the first row
-        for col in range(self.d):
-            logical_x[self._qubit_index(0, col)] = 1
-
-        # Logical Z: Z on the first column
+        # Logical X: Column 0 connects Top and Bottom X-boundaries
         for row in range(self.d):
-            logical_z[self._qubit_index(row, 0)] = 3
+            logical_x[self._qubit_index(row, 0)] = 1
+
+        # Logical Z: Row 0 connects Left and Right Z-boundaries
+        for col in range(self.d):
+            logical_z[self._qubit_index(0, col)] = 3
 
         return {"X": logical_x, "Z": logical_z}
 

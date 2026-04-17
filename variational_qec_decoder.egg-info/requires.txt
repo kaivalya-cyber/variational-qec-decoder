@@ -1,0 +1,15 @@
+pennylane>=0.38
+torch>=2.0
+numpy>=1.24
+scipy>=1.10
+matplotlib>=3.7
+seaborn>=0.12
+stim>=1.12
+pymatching>=2.0
+
+[dev]
+pytest>=7.0
+pytest-cov>=4.0
+flake8>=6.0
+black>=23.0
+mypy>=1.0

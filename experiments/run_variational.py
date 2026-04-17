@@ -22,9 +22,10 @@ def main():
     parser.add_argument("--d", type=int, default=3, help="Surface code distance")
     parser.add_argument("--ansatz", type=str, default="hardware_efficient", choices=["hardware_efficient", "symmetry_preserving"])
     parser.add_argument("--layers", type=int, default=4, help="Ansatz layers")
-    parser.add_argument("--epochs", type=int, default=50, help="Training epochs")
+    parser.add_argument("--epochs", type=int, default=500, help="Training epochs")
     parser.add_argument("--noise", type=str, default="depolarizing", help="Noise model type")
-    parser.add_argument("--shots", type=int, default=500, help="Evaluation shots")
+    parser.add_argument("--shots", type=int, default=5000, help="Evaluation shots")
+    parser.add_argument("--batch_size", type=int, default=32, help="Training batch size")
     args = parser.parse_args()
 
     os.makedirs("results/data", exist_ok=True)
@@ -41,7 +42,7 @@ def main():
     
     decoder = VariationalDecoder(code=code, ansatz=ansatz, noise_model=train_noise)
     
-    trainer = Trainer(decoder=decoder, lr=0.01)
+    trainer = Trainer(decoder=decoder, lr=0.01, batch_size=args.batch_size)
     
     logging.info(f"Training {args.ansatz} Decoder for {args.epochs} epochs...")
     history = trainer.train(n_epochs=args.epochs, eval_shots=args.shots)
@@ -63,7 +64,7 @@ def main():
     )
 
     serializable_results = {
-        f"Variational_{args.ansatz}": {
+        f"Variational_{args.ansatz}_d{args.d}": {
             "p_values": results["p_values"].tolist(),
             "logical_error_rates": results["logical_error_rates"].tolist()
         }

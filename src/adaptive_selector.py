@@ -269,7 +269,8 @@ class AdaptiveDecoderSelector:
 
             # Check logical error
             residual = _compose_paulis(error, correction)
-            if _is_logical_error(residual, logical_x):
+            lx, lz = logical_ops["X"], logical_ops["Z"]
+            if _is_logical_error(residual, lx, lz):
                 n_logical_errors += 1
 
         ler = n_logical_errors / n_shots
@@ -326,17 +327,16 @@ def _compose_paulis(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     return result
 
 
-def _is_logical_error(residual: np.ndarray, logical_x: np.ndarray) -> bool:
-    """Check if residual matches logical X.
-
-    Parameters
-    ----------
-    residual, logical_x : np.ndarray
-
-    Returns
-    -------
-    bool
-    """
+def _is_logical_error(
+    residual: np.ndarray, lx: np.ndarray, lz: np.ndarray
+) -> bool:
+    """Check if residual matches logical X or Z using commutation."""
     res_x = np.isin(residual, [1, 2]).astype(int)
-    log_x = np.isin(logical_x, [1, 2]).astype(int)
-    return bool(np.array_equal(res_x, log_x))
+    res_z = np.isin(residual, [2, 3]).astype(int)
+    log_x = np.isin(lx, [1, 2]).astype(int)
+    log_z = np.isin(lz, [2, 3]).astype(int)
+
+    comm_z = np.sum(res_x * log_z + res_z * np.isin(lz, [1, 2]).astype(int)) % 2
+    comm_x = np.sum(res_x * np.isin(lx, [2, 3]).astype(int) + res_z * log_x) % 2
+    
+    return bool(comm_x or comm_z)

@@ -72,7 +72,7 @@ def threshold_scan(
     """
     logical_error_rates = np.zeros(len(p_values))
     logical_ops = code.get_logical_ops()
-    logical_x = logical_ops["X"]
+    lx, lz = logical_ops["X"], logical_ops["Z"]
 
     for idx, p in enumerate(p_values):
         noise = noise_model_factory(p)
@@ -83,7 +83,7 @@ def threshold_scan(
             syndrome = code.extract_syndrome(errors[i])
             correction = decoder.decode(syndrome)
             residual = _compose_paulis(errors[i], correction)
-            if _is_logical_error(residual, logical_x):
+            if _is_logical_error(residual, lx, lz):
                 n_logical_errors += 1
 
         logical_error_rates[idx] = n_logical_errors / n_shots_per_p
@@ -147,11 +147,12 @@ def compare_decoders(
 
 def plot_threshold_curve(
     results: Dict[str, Dict[str, np.ndarray]],
-    title: str = "Logical vs Physical Error Rate",
+    title: str = "Logical Error Rate Comparison",
     save_path: Optional[str] = None,
     show: bool = False,
+    thresholds: Optional[List[float]] = None,
 ) -> plt.Figure:
-    """Plot threshold curves for multiple decoders.
+    """Plot threshold curves for multiple decoders with professional styling.
 
     Parameters
     ----------
@@ -160,45 +161,116 @@ def plot_threshold_curve(
     title : str
         Plot title.
     save_path : str, optional
-        Path to save the figure. Defaults to ``results/figures/threshold.png``.
+        Path to save the figure.
     show : bool
         Whether to display the plot.
+    thresholds : list of float, optional
+        List of threshold values to plot as vertical lines.
 
     Returns
     -------
     matplotlib.figure.Figure
     """
-    sns.set_theme(style="whitegrid", palette="deep")
+    sns.set_theme(style="whitegrid")
+    plt.rcParams.update({'font.size': 12})
+    
+    fig, ax = plt.subplots(1, 1, figsize=(10, 7))
 
-    fig, ax = plt.subplots(1, 1, figsize=(8, 6))
+    # Colorblind safe palette
+    # Blue: Adaptive, Orange: HEA, Black: MWPM, Purple: Lookup
+    color_map = {
+        "Adaptive": "#0173b2",
+        "Variational": "#de8f05",
+        "MWPM": "black",
+        "LookupTable": "#cc78bc",
+        "p_L = p": "gray"
+    }
+    
+    def get_color(name):
+        for k, v in color_map.items():
+            if k in name: return v
+        return None
 
-    markers = ["o", "s", "^", "D", "v", "<", ">"]
-    for i, (name, data) in enumerate(results.items()):
-        ax.semilogy(
-            data["p_values"],
-            data["logical_error_rates"],
-            marker=markers[i % len(markers)],
+    # Sort results to have baselines first for better layering
+    sorted_names = sorted(results.keys(), key=lambda x: ("MWPM" in x, "Lookup" in x), reverse=True)
+    
+    active_curves = {}
+    
+    for name in sorted_names:
+        data = results[name]
+        p_vals = np.array(data["p_values"])
+        ler_vals = np.array(data["logical_error_rates"])
+        
+        # Filter out zero LER values before plotting on log scale
+        valid_idx = ler_vals > 0
+        p_plot = p_vals[valid_idx]
+        ler_plot = ler_vals[valid_idx]
+
+        if len(p_plot) == 0:
+            continue
+
+        color = get_color(name)
+        ls = "--" if "Lookup" in name else "-"
+        m = "o" if "Adaptive" in name else "s" if "Variational" in name else "D"
+        lw = 2.5 if "Adaptive" in name or "Variational" in name else 1.5
+        z = 10 if "Adaptive" in name else 5
+
+        line, = ax.semilogy(
+            p_plot,
+            ler_plot,
             label=name,
-            linewidth=2,
-            markersize=6,
+            color=color,
+            linestyle=ls,
+            marker=m,
+            linewidth=lw,
+            markersize=7,
+            zorder=z,
+            alpha=0.9
         )
+        active_curves[name] = (p_plot, ler_plot, color)
+
+    # Shaded region between Adaptive and HEA if both exist for same distance
+    adaptive_keys = [k for k in results.keys() if "Adaptive" in k]
+    hea_keys = [k for k in results.keys() if "Variational" in k]
+    
+    for a_key in adaptive_keys:
+        # Extract distance string (e.g., 'd3') from key
+        d_str = a_key.split("_")[-1]
+        for h_key in hea_keys:
+            if d_str in h_key and a_key in active_curves and h_key in active_curves:
+                p_a, ler_a, _ = active_curves[a_key]
+                p_h, ler_h, _ = active_curves[h_key]
+                # Assuming p_values are aligned
+                ax.fill_between(p_a, ler_a, ler_h, color=color_map["Adaptive"], alpha=0.1, zorder=1)
 
     # Reference line: p_logical = p_physical
-    p_vals = list(results.values())[0]["p_values"]
-    ax.semilogy(p_vals, p_vals, "--", color="gray", alpha=0.5, label="p_L = p")
+    p_ref = list(results.values())[0]["p_values"]
+    ax.semilogy(p_ref, p_ref, "--", color=color_map["p_L = p"], alpha=0.6, label="$p_L = p$", zorder=0)
 
-    ax.set_xlabel("Physical Error Rate (p)", fontsize=13)
-    ax.set_ylabel("Logical Error Rate (p_L)", fontsize=13)
-    ax.set_title(title, fontsize=15, fontweight="bold")
-    ax.legend(fontsize=11)
-    ax.grid(True, which="both", alpha=0.3)
+    # Add vertical lines for thresholds if provided
+    if thresholds:
+        for th in thresholds:
+            if 0 < th <= 0.11:
+                ax.axvline(x=th, color="red", linestyle=":", alpha=0.5, linewidth=1.5)
+                ax.text(th + 0.002, ax.get_ylim()[1]*0.7, f"$p_{{th}}={th}$", 
+                        rotation=90, color="red", alpha=0.7, fontsize=11, fontweight="bold")
+
+    ax.set_xlabel("Physical Error Rate (p)", fontsize=14, fontweight="bold")
+    ax.set_ylabel("Logical Error Rate ($p_L$)", fontsize=14, fontweight="bold")
+    ax.set_title(title, fontsize=16, fontweight="bold", pad=20)
+    
+    ax.set_xlim(0, 0.11)
+    ax.grid(True, which="both", linestyle="--", alpha=0.3)
+    ax.grid(True, which="minor", linestyle=":", alpha=0.1)
+    
+    ax.legend(frameon=True, fontsize=10, loc="lower right", shadow=True)
 
     plt.tight_layout()
 
     if save_path is None:
-        save_path = os.path.join(FIGURES_DIR, "threshold.png")
-    fig.savefig(save_path, dpi=150)
-    logger.info("Saved threshold plot to %s", save_path)
+        save_path = os.path.join(FIGURES_DIR, "combined_thresholds.png")
+    fig.savefig(save_path, dpi=300)
+    logger.info("Saved enhanced threshold plot to %s", save_path)
 
     if show:
         plt.show()
@@ -347,17 +419,20 @@ def _compose_paulis(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     return result
 
 
-def _is_logical_error(residual: np.ndarray, logical_x: np.ndarray) -> bool:
-    """Check if residual matches logical X.
-
-    Parameters
-    ----------
-    residual, logical_x : np.ndarray
-
-    Returns
-    -------
-    bool
+def _is_logical_error(residual: np.ndarray, lx: np.ndarray, lz: np.ndarray) -> bool:
+    """Check if residual corresponds to a non-trivial logical error.
+    
+    A residual error is logical if it anticommutes with the logical operators.
+    In the symplectic basis, commutation is (x1*z2 + z1*x2) % 2.
     """
     res_x = np.isin(residual, [1, 2]).astype(int)
-    log_x = np.isin(logical_x, [1, 2]).astype(int)
-    return bool(np.array_equal(res_x, log_x))
+    res_z = np.isin(residual, [2, 3]).astype(int)
+    log_x = np.isin(lx, [1, 2]).astype(int)
+    log_z = np.isin(lz, [2, 3]).astype(int)
+
+    # Check if residual anticommutes with logical Z (signifies X-type logical error)
+    # Check if residual anticommutes with logical X (signifies Z-type logical error)
+    comm_x = np.sum(res_x * log_z + res_z * np.isin(lz, [1, 2]).astype(int)) % 2
+    comm_z = np.sum(res_x * np.isin(lx, [2, 3]).astype(int) + res_z * log_x) % 2
+    
+    return bool(comm_x or comm_z)
