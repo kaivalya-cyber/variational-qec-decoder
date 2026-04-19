@@ -436,3 +436,90 @@ def _is_logical_error(residual: np.ndarray, lx: np.ndarray, lz: np.ndarray) -> b
     comm_z = np.sum(res_x * np.isin(lx, [2, 3]).astype(int) + res_z * log_x) % 2
     
     return bool(comm_x or comm_z)
+
+
+# ---------------------------------------------------------------------------
+# Extended comparison (includes continuous selector and online learner)
+# ---------------------------------------------------------------------------
+
+def compare_all_decoders(
+    decoders_dict: Dict[str, Any],
+    code: StabilizerCode,
+    noise_model_factory: Callable[[float], NoiseModel],
+    p_values: np.ndarray,
+    n_shots: int = DEFAULT_N_SHOTS,
+    seed: int = 42,
+) -> Dict[str, Dict[str, np.ndarray]]:
+    """Benchmark all decoders including continuous and online variants.
+
+    This extends ``compare_decoders`` to include continuous selector and
+    online learner results alongside existing decoders.
+
+    Parameters
+    ----------
+    decoders_dict : dict
+        ``{name: decoder}`` mapping. Decoders must have a ``decode(syndrome)``
+        method.  Continuous selectors should have ``decode_continuous`` and
+        online learners should have a ``decoder`` attribute.
+    code : StabilizerCode
+        The QEC code.
+    noise_model_factory : callable
+        ``p -> NoiseModel``.
+    p_values : np.ndarray
+        Physical error rates to scan.
+    n_shots : int
+        Shots per error rate.
+    seed : int
+        Base random seed.
+
+    Returns
+    -------
+    dict
+        ``{decoder_name: {'p_values': array, 'logical_error_rates': array}}``.
+    """
+    results = {}
+    for name, decoder in decoders_dict.items():
+        logger.info("Evaluating decoder: %s", name)
+        results[name] = threshold_scan(
+            decoder, code, noise_model_factory, p_values, n_shots, seed
+        )
+    return results
+
+
+def plot_combined_figure(
+    results: Dict[str, Dict[str, np.ndarray]],
+    save_path: Optional[str] = None,
+) -> plt.Figure:
+    """Generate final combined paper figure with all decoder variants.
+
+    Shows standard decoders, continuous selector, and online learner
+    on the same threshold plot for direct comparison.
+
+    Parameters
+    ----------
+    results : dict
+        Output of ``compare_all_decoders``.
+    save_path : str, optional
+        Output path.
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+    """
+    import gc
+
+    if save_path is None:
+        save_path = os.path.join(FIGURES_DIR, "combined_all_decoders.png")
+
+    fig = plot_threshold_curve(
+        results,
+        title="All Decoders: Logical Error Rate Comparison",
+        save_path=save_path,
+    )
+
+    plt.close("all")
+    del fig
+    gc.collect()
+
+    logger.info("Saved combined all-decoders figure to %s", save_path)
+    return None
