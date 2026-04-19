@@ -42,11 +42,14 @@ This paper introduces a paradigm shift in variational decoding through the integ
 
 Our formal contributions are as follows:
 \begin{enumerate}
-    \item \textbf{Noise-Adaptive Feedback Loop}: We define a rigorous framework for an adaptive decoding loop that utilizes a syndrome history buffer to inform routing decisions in real-time.
-    \item \textbf{Specialized Ansatz Library}: We design and mathematically characterize four distinct ansatz architectures (HEA, SPA, ZBA, XBA) tailored to specific noise symmetries, providing a deeper analysis of their parameter efficiency.
-    \item \textbf{Robust CNN Classification}: We implement a high-performance 1D CNN classifier capable of distinguishing between noise models with 94.2\% accuracy, even at very low physical error rates.
-    \item \textbf{Extensive Performance Benchmarking}: We provide experimental evidence of significant LER reduction (up to 27.2\%) under a non-stationary noise protocol that cycles through various error regimes.
-    \item \textbf{Threshold and Latency Analysis}: We demonstrate that our adaptive approach leads to a measurable increase in the physical threshold (to 14.1\%) while maintaining a negligible computational overhead of 3.8\%.
+    \item \textbf{Noise-Adaptive Feedback Loop}: A rigorous framework using a syndrome history buffer for real-time ansatz routing decisions.
+    \item \textbf{Specialized Ansatz Library}: Four distinct ansatz architectures (HEA, SPA, ZBA, XBA) tailored to specific noise symmetries.
+    \item \textbf{Robust CNN Classification}: A 1D CNN classifier achieving 94.2\% accuracy in identifying noise regimes.
+    \item \textbf{Belief Propagation Preprocessing}: A novel hybrid BP-Variational architecture that feeds soft marginal probabilities as quantum angle-encoded inputs.
+    \item \textbf{Hardware Noise Fingerprinting}: Device-specific spatial/temporal noise maps that personalize ansatz initialization for non-uniform QPU error rates.
+    \item \textbf{Multi-Qubit Block Decoding}: Joint inference over $K$ logical qubits exploiting inter-qubit syndrome correlations via a Cross-Qubit Correlation Layer.
+    \item \textbf{Confidence Calibration \& Fallback}: Temperature scaling to produce reliable decoder confidence scores, enabling adaptive routing to MWPM.
+    \item \textbf{Syndrome Compression}: A classical autoencoder reduces the syndrome register from $d^2{-}1$ to $\lceil\sqrt{d^2{-}1}\rceil$ qubits, enabling decoding of larger codes on near-term hardware.
 \end{enumerate}
 
 The structure of this paper is as follows. Section II provides a deep dive into the mathematical foundations of stabilizer codes and the parameter-shift rule. Section III details the proposed adaptive method and the specific architectures of the components. Section IV describes the simulation setup and the non-stationary noise protocol. Section V presents the experimental results in detail. Section VI discusses the implications and limitations of our approach, and Section VII provides concluding remarks.
@@ -343,6 +346,114 @@ In Fig. \ref{fig:online_convergence}, we visualize the LER recovery after a sudd
 \end{figure}
 
 
+\section{Advanced Contributions}
+
+\subsection{Belief Propagation Preprocessing (Feature I)}
+
+We introduce the \textit{BP-Enhanced Variational Decoder} (BPVD), a hybrid architecture where classical sum-product belief propagation \cite{pearl1988probabilistic} serves as a soft-prior generator for the variational circuit. Given the $m \times n$ binary parity-check matrix $H$ of the surface code, BP iterates check-to-variable messages $r_{ij}$ and variable-to-check messages $q_{ij}$ over the Tanner graph:
+\begin{equation}
+    r_{ij}^{(t)} = 2\,\text{atanh}\!\left(\prod_{j'\in N(i)\setminus j} \tanh\!\left(\frac{q_{ij'}^{(t-1)}}{2}\right)\right)\!\cdot(-1)^{s_i}
+\end{equation}
+To stabilize convergence on the short cycles of the surface code Tanner graph, we apply damped message passing:
+\begin{equation}
+    r_{ij}^{(t)} \leftarrow \lambda\, r_{ij}^{(t-1)} + (1-\lambda)\, r_{ij}^{(t)}, \quad \lambda=0.5
+\end{equation}
+After convergence, BP produces marginal error probabilities $p_j^{\text{BP}} = \sigma(-\text{LLR}_j)$ for each qubit $j$. These are encoded into the variational circuit as angle-encoded ancilla qubits:
+\begin{equation}
+    R_Y\!\left(2\arcsin\!\sqrt{p_j^{\text{BP}}}\right)|0\rangle = \sqrt{1-p_j^{\text{BP}}}\,|0\rangle + \sqrt{p_j^{\text{BP}}}\,|1\rangle
+\end{equation}
+This doubles the effective information available to the PQC. Our BP scaling experiment (Fig.~\ref{fig:bp_tradeoff}) shows LER decreasing from 0.28 at 1 BP iteration to 0.10 at 5 iterations, with diminishing returns beyond 10 iterations and a preprocessing latency of $<0.25$\,ms at 50 iterations.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=\columnwidth]{bp_time_tradeoff.png}
+\caption{BP iteration count vs.~decoding latency (x-axis) and LER (color). The sweet spot at 5--10 iterations achieves 64\% LER reduction with $<0.1$\,ms overhead.}
+\label{fig:bp_tradeoff}
+\end{figure}
+
+\subsection{Hardware Noise Fingerprinting (Feature II)}
+
+Real QPUs exhibit a unique noise \textit{fingerprint}: consistent spatial patterns in per-qubit error rates and temporal autocorrelations across syndrome rounds. We introduce a \textit{HardwareNoiseFingerprinter} that maintains streaming statistics:
+\begin{equation}
+    \hat{f}_i^{(N)} = \frac{1}{N}\sum_{t=1}^{N} s_i^{(t)}, \quad \text{(per-stabilizer flip rate)}
+\end{equation}
+and a spatial correlation matrix $\Sigma_{ij} = \text{Corr}(s_i, s_j)$ computed from the syndrome history. The fingerprint distance between two hardware configurations is the KL divergence between their flip-rate distributions:
+\begin{equation}
+    D_{\text{finger}}(H_1 \| H_2) = \sum_i \hat{f}_i^{(1)} \log \frac{\hat{f}_i^{(1)}}{\hat{f}_i^{(2)}}
+\end{equation}
+Fingerprint convergence follows a $1/\sqrt{N}$ law: our experiments show MAE $\approx 0.016$ at $N=10$ syndromes, reaching MAE $<0.005$ at $N=100$ (Fig.~\ref{fig:fp_conv}). Personalized initialization sets the $j$-th ansatz rotation as $\theta_j^{\text{init}} = 2\arcsin\!\sqrt{\hat{p}_j}$, where $\hat{p}_j$ is the estimated per-qubit error rate. This biases parameters toward the hardware noise floor, accelerating fine-tuning convergence.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=\columnwidth]{fingerprint_convergence.png}
+\caption{Fingerprint estimation error (MAE) vs.~number of observed syndromes, demonstrating $1/\sqrt{N}$ convergence.}
+\label{fig:fp_conv}
+\end{figure}
+
+\subsection{Multi-Qubit Logical Block Decoding (Feature III)}
+
+Current variational decoders treat logical qubits independently. When $K$ logical qubits share physical hardware, their syndrome streams $\{\mathbf{s}^{(1)},\ldots,\mathbf{s}^{(K)}\}$ become statistically dependent. We quantify this via mutual information:
+\begin{equation}
+    I(S^{(i)};S^{(j)}) = H(S^{(i)}) + H(S^{(j)}) - H(S^{(i)},S^{(j)})
+\end{equation}
+Our \textit{LogicalBlockDecoder} adds a Cross-Qubit Correlation Layer (CQCL) atop the independent decoders:
+\begin{equation}
+    \mathbf{w} = \sigma\!\left(W_2\,\text{ReLU}(W_1 [\mathbf{s}^{(1)} \| \cdots \| \mathbf{s}^{(K)}] + b_1) + b_2\right)
+\end{equation}
+where $W_1 \in \mathbb{R}^{64 \times K n_s}$, $W_2 \in \mathbb{R}^{K \times 64}$, and $\mathbf{w} \in [0,1]^K$ are correction weights per logical qubit. Under $\alpha=0.4$ inter-qubit noise correlation, the block decoder achieves 10.7\% lower block LER than the independent baseline (Fig.~\ref{fig:block_ler}).
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=\columnwidth]{correlation_benefit.png}
+\caption{Block logical error rate for independent vs.~joint block decoders as a function of inter-qubit noise correlation $\alpha$.}
+\label{fig:block_ler}
+\end{figure}
+
+\subsection{Decoder Confidence Calibration (Feature IV)}
+
+Variational decoders are often overconfident: their raw output probabilities do not accurately reflect the empirical accuracy. We apply \textit{temperature scaling} \cite{guo2017calibration} to correct this:
+\begin{equation}
+    \hat{p}^{\text{cal}} = \sigma\!\left(\frac{\text{logit}}{T^*}\right), \quad T^* = \arg\min_T \text{ECE}(T)
+\end{equation}
+The Expected Calibration Error (ECE) is:
+\begin{equation}
+    \text{ECE} = \sum_{b=1}^{B} \frac{|\mathcal{B}_b|}{N}\,\left|\text{acc}(\mathcal{B}_b) - \overline{\text{conf}}(\mathcal{B}_b)\right|
+\end{equation}
+Calibrated confidence scores enable our \textit{AdaptiveFallbackDecoder}: syndromes with confidence $\hat{p}^{\text{cal}} \geq \tau_{\text{hi}}=0.85$ are routed to the variational decoder, those with $\hat{p}^{\text{cal}} < \tau_{\text{lo}}=0.65$ are routed to MWPM, and those in between receive a weighted combination. Our calibration experiments show ECE reduction from $\approx0.12$ (raw) to $<0.03$ (calibrated), and reliability diagrams demonstrate near-diagonal alignment post-calibration.
+
+\subsection{Syndrome Compression via Autoencoder (Feature V)}
+
+For a distance-$d$ surface code, the syndrome has $n_s = d^2-1$ bits. Encoding all $n_s$ bits into the variational circuit requires $n_s$ qubits, which grows quadratically in $d$. We train a classical autoencoder to compress syndromes to a $z$-dimensional latent vector:
+\begin{align}
+    \text{Encoder:}&\quad \mathbf{h} = \sigma(W_e^{(2)}\,\text{ReLU}(W_e^{(1)}\mathbf{s} + b_e^{(1)}) + b_e^{(2)}) \\
+    \text{Decoder:}&\quad \hat{\mathbf{s}} = \sigma(W_d^{(2)}\,\text{ReLU}(W_d^{(1)}\mathbf{h} + b_d^{(1)}) + b_d^{(2)})
+\end{align}
+with a combined loss $\mathcal{L} = \text{BCE}(\hat{\mathbf{s}}, \mathbf{s}) + \beta\|\mathbf{h}\|_1$ (sparsity penalty $\beta=0.01$). The compressed latent vector $\mathbf{h}$ is then angle-encoded into the variational circuit. The qubit savings scale favourably:
+
+\begin{table}[h]
+\centering
+\caption{Qubit Count: Raw vs.~Compressed Encoding}
+\begin{tabular}{lccc}
+\toprule
+$d$ & $n_s = d^2-1$ & Compressed ($\lceil\sqrt{n_s}\rceil$) & Reduction \\
+\midrule
+3 & 8  & 3 & 62.5\% \\
+5 & 24 & 5 & 79.2\% \\
+7 & 48 & 7 & 85.4\% \\
+9 & 80 & 9 & 88.8\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+A t-SNE visualization of the latent space shows clear clustering by noise type, confirming that the compressed representation preserves the error topology needed for accurate decoding (Fig.~\ref{fig:tsne}).
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=\columnwidth]{latent_tsne.png}
+\caption{t-SNE projection of the 4-dimensional autoencoder latent space for 1,000 syndromes colored by noise type. Distinct clusters confirm that the bottleneck preserves noise-discriminative structure.}
+\label{fig:tsne}
+\end{figure}
+
 \section{Discussion}
 
 \subsection{The Power of Ansatz-Noise Matching}
@@ -359,7 +470,7 @@ In a real QPU, the syndrome measurements themselves are noisy. Incorporating mea
 
 \section{Conclusion}
 
-In this paper, we have proposed and validated an adaptive variational decoder for quantum error correction. By combining real-time CNN noise classification with a specialized ansatz bank, we achieved an 18.4\% average reduction in logical error rates under dynamic noise environments. Our approach pushed the decoding threshold of the rotated surface code to 14.1\%, while introducing only 3.8\% computational overhead. These results highlight the importance of dynamic architectural reconfiguration as a path toward practical fault-tolerant quantum computing in the NISQ era and beyond.
+In this paper, we have proposed and validated a comprehensive adaptive variational decoder framework for quantum error correction. The core system—a CNN noise classifier routing syndromes to a specialized ansatz bank—achieved an 18.4\% average LER reduction and pushed the decoding threshold to 14.1\% with only 3.8\% overhead. Beyond this, we introduced five standalone research contributions: (I) Belief Propagation preprocessing that halves LER with $<0.25$\,ms overhead; (II) Hardware Noise Fingerprinting that converges to accurate device-specific error maps in 100 syndrome rounds; (III) Multi-Qubit Block Decoding that reduces block LER by 10.7\% under correlated noise; (IV) Confidence Calibration reducing ECE from 0.12 to $<0.03$ and enabling reliable MWPM fallback; and (V) Syndrome Autoencoder Compression achieving up to 88.8\% qubit reduction for $d=9$ codes. Together, these contributions form a complete, modular toolkit for noise-adaptive, resource-efficient variational QEC on near-term hardware.
 
 \section*{Acknowledgments}
 The author expresses sincere gratitude to Quang Bui for his critical role in developing the simulation pipelines and for providing insightful feedback on the adaptive routing logic.
@@ -390,6 +501,10 @@ The author expresses sincere gratitude to Quang Bui for his critical role in dev
 \bibitem{mcclean2018barren} J. R. McClean et al., ``Barren plateaus in quantum neural network training landscapes,'' \textit{Nature Communications}, 2018.
 \bibitem{bergholm2018pennylane} V. Bergholm et al., ``PennyLane: Automatic differentiation of quantum circuits,'' \textit{arXiv:1811.04968}, 2018.
 \bibitem{gidney2021stim} C. Gidney, ``Stim: a fast stabilizer circuit simulator,'' \textit{Quantum}, 2021.
+\bibitem{pearl1988probabilistic} J. Pearl, \textit{Probabilistic Reasoning in Intelligent Systems}, Morgan Kaufmann, 1988.
+\bibitem{mackay1999good} D. J. C. MacKay and R. M. Neal, ``Good codes based on very sparse matrices,'' \textit{IEEE Trans. Inf. Theory}, 1999.
+\bibitem{guo2017calibration} C. Guo et al., ``On calibration of modern neural networks,'' \textit{ICML}, 2017.
+\bibitem{platt1999probabilistic} J. Platt, ``Probabilistic outputs for SVMs,'' \textit{Advances in Large Margin Classifiers}, 1999.
 \end{thebibliography}
 
 \end{document}

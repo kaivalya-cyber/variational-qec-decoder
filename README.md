@@ -79,6 +79,12 @@ Generate figures combining data from all completed runs.
 python experiments/plot_results.py
 ```
 
+### 7. Advanced Research Features
+Run the full suite of novel research contributions (BP Preprocessing, Noise Fingerprinting, Block Decoding, Confidence Calibration, and Syndrome Compression).
+```bash
+python experiments/run_all_features.py
+```
+
 ## Citation
 
 If you use this codebase in your research, please cite the framework using the following placeholder (details to be updated upon publication):

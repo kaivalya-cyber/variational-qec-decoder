@@ -83,6 +83,14 @@ class StabilizerCode(ABC):
             Proposed Pauli correction of length ``n_qubits``.
         """
 
+    @abstractmethod
+    def get_parity_check_matrix(self) -> np.ndarray:
+        """Return the binary parity check matrix H.
+        
+        For CSS codes, this usually returns the component relevant 
+        to the noise type (e.g., H_x or H_z).
+        """
+
 
 # ---------------------------------------------------------------------------
 # Repetition Code
@@ -112,20 +120,17 @@ class RepetitionCode(StabilizerCode):
 
     # -- stabiliser check matrix -------------------------------------------
 
-    def get_stabilizers(self) -> np.ndarray:
-        """Return the parity check matrix in binary symplectic form.
-
-        Returns
-        -------
-        np.ndarray
-            Shape ``(d-1, 2*d)`` binary matrix.
-        """
-        h = np.zeros((self.n_stabilizers, 2 * self.n_qubits), dtype=int)
-        for i in range(self.n_stabilizers):
-            # Z_i Z_{i+1} -> set the Z-part (second half) columns
-            h[i, self.n_qubits + i] = 1
-            h[i, self.n_qubits + i + 1] = 1
         return h
+
+    def get_parity_check_matrix(self) -> np.ndarray:
+        """Return the bit-flip parity check matrix."""
+        h_full = self.get_stabilizers()
+        return h_full[:, self.n_qubits:] # Z part detects X errors
+
+    def get_parity_check_matrix(self) -> np.ndarray:
+        """Return the bit-flip parity check matrix."""
+        h_full = self.get_stabilizers()
+        return h_full[:, self.n_qubits:] # Z part detects X errors
 
     # -- syndrome extraction -----------------------------------------------
 
@@ -352,6 +357,11 @@ class SurfaceCode(StabilizerCode):
                 h[self.n_x_stabilizers + j, n + q] = 1  # Z part
 
         return h
+
+    def get_parity_check_matrix(self) -> np.ndarray:
+        """Return the Z-stabilizer parity check matrix (detects X errors)."""
+        h_full = self.get_stabilizers()
+        return h_full[self.n_x_stabilizers:, self.n_qubits:]
 
     def extract_syndrome(self, error: np.ndarray) -> np.ndarray:
         """Extract X and Z syndromes from a Pauli error.

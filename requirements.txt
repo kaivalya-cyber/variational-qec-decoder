@@ -8,3 +8,5 @@ pennylane-lightning>=0.38
 stim>=1.12
 pymatching>=2.0
 tqdm>=4.60
+scikit-learn
+seaborn
