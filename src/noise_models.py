@@ -128,7 +128,8 @@ class DepolarizingNoise(NoiseModel):
         """
         rng = np.random.default_rng(seed)
         p_each = self.p / 3.0
-        probs = [1.0 - self.p, p_each, p_each, p_each]
+        probs = np.array([1.0 - self.p, p_each, p_each, p_each], dtype=np.float64)
+        probs /= probs.sum()  # Force sum to 1.0 to avoid floating point errors
         return rng.choice(4, size=(n_shots, n_qubits), p=probs)
 
     def get_channel_matrix(self) -> np.ndarray:

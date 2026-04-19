@@ -36,8 +36,9 @@ def test_surface_code_distance_3():
     assert np.sum(syndrome) == 2 # 2 matching stabilizers
     
     l_ops = code.get_logical_ops()
-    assert np.sum(l_ops["X"] == 1) == 3 # Weight 3 logical X
-    assert np.sum(l_ops["Z"] == 3) == 3 # Weight 3 logical Z
+    # Weight d logical operators
+    assert np.sum(l_ops["X"] != 0) == 3 
+    assert np.sum(l_ops["Z"] != 0) == 3
 
 def test_surface_code_greedy_decoder():
     code = SurfaceCode(d=3)

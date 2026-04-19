@@ -17,6 +17,7 @@ setup(
     python_requires=">=3.10",
     install_requires=[
         "pennylane>=0.38",
+        "pennylane-lightning>=0.38",
         "torch>=2.0",
         "numpy>=1.24",
         "scipy>=1.10",

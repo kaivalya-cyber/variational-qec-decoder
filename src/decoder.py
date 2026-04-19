@@ -59,7 +59,13 @@ class VariationalDecoder:
         if self.n_qubits is None:
             self.n_qubits = self.code.n_qubits
         self.params: np.ndarray = self.ansatz.init_params(seed=42)
-        self._device = qml.device("lightning.qubit", wires=self.n_qubits)
+        try:
+            self._device = qml.device("lightning.qubit", wires=self.n_qubits)
+        except qml.DeviceError:
+            logger.warning(
+                "lightning.qubit device not found. Falling back to default.qubit."
+            )
+            self._device = qml.device("default.qubit", wires=self.n_qubits)
         self._build_circuit()
         logger.info(
             "VariationalDecoder initialised: %d qubits, %d params",

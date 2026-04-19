@@ -61,7 +61,19 @@ Run the full adaptive pipeline in a dynamically changing noise environment. This
 python experiments/run_adaptive.py
 ```
 
-### 4. Plotting Results
+### 4. Continuous Noise Estimation
+Train a regression-based CNN to estimate continuous noise parameters $(p_X, p_Z, p_{depol})$ and evaluate soft-weight decoder interpolation.
+```bash
+python experiments/run_continuous.py --d 3
+```
+
+### 5. Online Learning and Adaptation
+Evaluate real-time fine-tuning of variational decoders under non-stationary noise (drift, sudden switches, etc.) and calculate adaptation lag.
+```bash
+python experiments/run_online.py --d 3
+```
+
+### 6. Plotting Results
 Generate figures combining data from all completed runs.
 ```bash
 python experiments/plot_results.py
@@ -73,7 +85,7 @@ If you use this codebase in your research, please cite the framework using the f
 
 ```bibtex
 @misc{VQEC2026,
-  author = {Kaivalya Sinhg},
+  author = {Kaivalya Singh},
   title = {Adaptive Noise-Aware Variational Decoding for Quantum Error Correction},
   year = {2026},
   publisher = {GitHub},
