@@ -120,6 +120,17 @@ class RepetitionCode(StabilizerCode):
 
     # -- stabiliser check matrix -------------------------------------------
 
+    def get_stabilizers(self) -> np.ndarray:
+        """Return the stabilizer check matrix for the repetition code.
+        
+        The code uses d-1 stabilizers of type Z_i Z_{i+1}.
+        """
+        n = self.n_qubits
+        m = self.n_stabilizers
+        h = np.zeros((m, 2 * n), dtype=int)
+        for i in range(m):
+            h[i, n + i] = 1      # Z_i
+            h[i, n + i + 1] = 1  # Z_{i+1}
         return h
 
     def get_parity_check_matrix(self) -> np.ndarray:
