@@ -12,3 +12,5 @@ vqec_env/
 .DS_Store
 paper_submission/
 *.zip
+manuscript.tex
+overleaf_bundle/

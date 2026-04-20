@@ -21,6 +21,7 @@ def main():
     parser.add_argument("--d", type=int, default=3, help="Surface code distance")
     parser.add_argument("--shots", type=int, default=5000, help="Number of Monte Carlo shots")
     parser.add_argument("--noise", type=str, default="depolarizing", help="Noise model type")
+    parser.add_argument("--p_steps", type=int, default=10, help="Number of p-values in threshold scan")
     args = parser.parse_args()
 
     os.makedirs("results/data", exist_ok=True)
@@ -38,7 +39,7 @@ def main():
     else:
         logging.warning("Skipping MWPM as pymatching is not installed.")
 
-    p_values = np.logspace(-3, -1, 10)
+    p_values = np.logspace(-3, -1, args.p_steps)
     
     # Generate partial function for noise model factory
     def noise_factory(p):

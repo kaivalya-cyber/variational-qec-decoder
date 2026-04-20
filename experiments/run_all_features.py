@@ -37,8 +37,10 @@ def run_script(script_path: str, args: list = []):
     start_time = time.time()
     
     try:
+        env = os.environ.copy()
+        env["PYTHONPATH"] = os.getcwd()
         cmd = ["python", script_path] + args
-        subprocess.run(cmd, check=True)
+        subprocess.run(cmd, check=True, env=env)
         
         logger.info("SUCCESS: %s", script_path)
     except subprocess.CalledProcessError as e:
@@ -56,11 +58,11 @@ def main():
     os.makedirs("results/figures", exist_ok=True)
     
     experiments = [
-        ("experiments/run_bp_experiment.py", ["--shots", "50"]),
-        ("experiments/run_fingerprinting.py", ["--shots", "200"]),
-        ("experiments/run_block_decoder.py", ["--shots", "200"]),
-        ("experiments/run_calibration.py", ["--samples", "500"]),
-        ("experiments/run_compression.py", ["--samples", "500"]),
+        ("experiments/run_bp_experiment.py", ["--shots", "1000"]),
+        ("experiments/run_fingerprinting.py", ["--shots", "2000"]),
+        ("experiments/run_block_decoder.py", ["--shots", "2000"]),
+        ("experiments/run_calibration.py", ["--samples", "5000"]),
+        ("experiments/run_compression.py", ["--samples", "2000"]),
     ]
     
     total_start = time.time()

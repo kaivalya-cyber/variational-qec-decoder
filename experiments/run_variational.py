@@ -26,6 +26,7 @@ def main():
     parser.add_argument("--noise", type=str, default="depolarizing", help="Noise model type")
     parser.add_argument("--shots", type=int, default=5000, help="Evaluation shots")
     parser.add_argument("--batch_size", type=int, default=32, help="Training batch size")
+    parser.add_argument("--p_steps", type=int, default=10, help="Number of p-values in threshold scan")
     args = parser.parse_args()
 
     os.makedirs("results/data", exist_ok=True)
@@ -50,7 +51,7 @@ def main():
     plot_training_history(history.to_dict(), save_path=f"results/figures/train_d{args.d}_{args.ansatz}.png")
 
     logging.info("Evaluating threshold curve...")
-    p_values = np.logspace(-3, -1, 10)
+    p_values = np.logspace(-3, -1, args.p_steps)
     
     def noise_factory(p):
         return create_noise_model(args.noise, p=p)

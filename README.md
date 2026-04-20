@@ -85,9 +85,31 @@ Run the full suite of novel research contributions (BP Preprocessing, Noise Fing
 python experiments/run_all_features.py
 ```
 
+### 8. High-Precision "Gold Standard" Campaign
+Run the full threshold scaling campaign for $d=3, 4$ and baselines up to $d=11$ with high statistics (10,000 shots, 20 $p$-values). Memory-optimized for 6GB RAM.
+```bash
+python experiments/run_large_scale.py
+```
+
+## Advanced Research Features
+
+This repository implements several cutting-edge features for next-generation QEC:
+*   **BP Preprocessing**: Hybrid Belief Propagation-Variational architecture for soft-prior generation.
+*   **Hardware Fingerprinting**: Real-time spatial/temporal noise characterization and personalized initialization.
+*   **Multi-Qubit Block Decoding**: Joint inference over logical qubits to exploit shared syndrome correlations.
+*   **Confidence Calibration**: Temperature scaling for reliable decoder reliability scores and MWPM fallback.
+*   **Syndrome Compression**: Autoencoder-based syndrome reduction for resource-efficient decoding of larger code distances.
+
+## Memory Optimization
+
+The codebase is optimized for low-memory environments (6GB RAM):
+*   **Adjoint Differentiation**: Memory-efficient gradient calculation via `lightning.qubit`.
+*   **Batch Size Control**: Configurable training batches to manage statevector overhead.
+*   **Thread Management**: Restricted OpenMP threading (`OMP_NUM_THREADS=1`) for stability in high-distance simulations.
+
 ## Citation
 
-If you use this codebase in your research, please cite the framework using the following placeholder (details to be updated upon publication):
+If you use this codebase in your research, please cite the framework:
 
 ```bibtex
 @misc{VQEC2026,
@@ -96,6 +118,6 @@ If you use this codebase in your research, please cite the framework using the f
   year = {2026},
   publisher = {GitHub},
   journal = {GitHub repository},
-  howpublished = {\url{https://github.com/variational-qec/variational_qec_decoder}}
+  howpublished = {\url{https://github.com/kaivalya-cyber/variational-qec-decoder}}
 }
 ```
